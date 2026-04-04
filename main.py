@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import Response
+from fastapi import FastAPI, Request
 from groq import Groq
 from supabase import create_client
 from datetime import datetime, timezone
-import json, os, random
+import json, os, random, httpx
 
 app = FastAPI()
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 sb = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 TIPS = [
     "Ahorrar el 10% de cada ingreso es el primer paso hacia la libertad financiera.",
@@ -19,14 +20,15 @@ TIPS = [
     "Registrar tus gastos diariamente tarda menos de 30 segundos y puede cambiar tu vida.",
 ]
 
-def xml(msg):
-    return Response(
-        content=f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{msg}</Message></Response>',
-        media_type="text/xml"
-    )
-
 def tip():
     return f"\n\nTip Aibi: {random.choice(TIPS)}"
+
+async def enviar_mensaje(chat_id, texto):
+    async with httpx.AsyncClient() as c:
+        await c.post(f"{TELEGRAM_URL}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": texto
+        })
 
 def registrar_usuario(telefono):
     try:
@@ -89,12 +91,11 @@ def editar(telefono, descripcion_buscar, monto_nuevo):
     try:
         result = sb.table("transacciones").select("*").eq("telefono", telefono).ilike("descripcion", f"%{descripcion_buscar}%").order("id", desc=True).limit(1).execute()
         if not result.data:
-            return f"No encontre ningun gasto con '{descripcion_buscar}'. Intenta con otra descripcion."
+            return f"No encontre ningun gasto con '{descripcion_buscar}'."
         registro = result.data[0]
         sb.table("transacciones").update({"monto": monto_nuevo}).eq("id", registro["id"]).execute()
         return f"Listo! Actualice '{registro['descripcion']}' de S/ {registro['monto']} a S/ {monto_nuevo}"
     except Exception as e:
-        print("Error editando:", e)
         return "Error al editar el gasto."
 
 def eliminar(telefono, descripcion_buscar):
@@ -106,7 +107,6 @@ def eliminar(telefono, descripcion_buscar):
         sb.table("transacciones").delete().eq("id", registro["id"]).execute()
         return f"Elimine '{registro['descripcion']}' de S/ {registro['monto']} en {registro['categoria']}."
     except Exception as e:
-        print("Error eliminando:", e)
         return "Error al eliminar el gasto."
 
 def resumen(telefono):
@@ -140,7 +140,6 @@ Top gastos:
 
 {consejo}{tip()}"""
     except Exception as e:
-        print("Error resumen:", e)
         return "Error consultando tus datos."
 
 def consulta_avanzada(telefono, filtro, categoria=None):
@@ -153,14 +152,13 @@ def consulta_avanzada(telefono, filtro, categoria=None):
             return "No encontre gastos con ese criterio."
         if filtro == "mayor_gasto":
             mayor = max(data, key=lambda x: x["monto"])
-            return f"Tu mayor gasto es:\n\n{mayor['descripcion']}\nS/ {mayor['monto']}\n{mayor['categoria']}\n{mayor['fecha'][:10]}"
+            return f"Tu mayor gasto es:\n\n{mayor['descripcion']}\nS/ {mayor['monto']}\n{mayor['categoria']}"
         if filtro == "categoria" and categoria:
             total = sum(r["monto"] for r in data)
             return f"Total en {categoria}:\n\nS/ {total:.0f}\n{len(data)} transacciones{tip()}"
         total = sum(r["monto"] for r in data)
         return f"Total encontrado: S/ {total:.0f} en {len(data)} transacciones."
     except Exception as e:
-        print("Error consulta avanzada:", e)
         return "Error en la consulta."
 
 def ver_metas(telefono):
@@ -176,7 +174,6 @@ def ver_metas(telefono):
             resp += f"\n{m['nombre']}\n[{barra}] {pct}%\nS/ {m['monto_actual']:.0f} de S/ {m['monto_objetivo']:.0f}\nFaltan: S/ {faltan:.0f}\n"
         return resp + tip()
     except Exception as e:
-        print("Error metas:", e)
         return "Error consultando metas."
 
 def crear_meta(telefono, nombre, monto_objetivo):
@@ -190,7 +187,6 @@ def crear_meta(telefono, nombre, monto_objetivo):
         }).execute()
         return f"Meta creada!\n\n{nombre}\nObjetivo: S/ {monto_objetivo:.0f}\n\nEscribe 'Mis metas' para ver tu progreso."
     except Exception as e:
-        print("Error creando meta:", e)
         return "Error creando la meta."
 
 def configurar_reporte(telefono, tipo_reporte, activar):
@@ -198,25 +194,31 @@ def configurar_reporte(telefono, tipo_reporte, activar):
         campo = f"reporte_{tipo_reporte}"
         sb.table("usuarios").update({campo: activar}).eq("telefono", telefono).execute()
         estado = "activado" if activar else "desactivado"
-        return f"Reporte {tipo_reporte} {estado}.\n\nEscribe 'Mis reportes' para ver tu configuracion."
+        return f"Reporte {tipo_reporte} {estado}."
     except Exception as e:
-        print("Error configurando reporte:", e)
         return "Error actualizando configuracion."
 
 @app.post("/webhook")
-async def webhook(Body: str = Form(...), From: str = Form(...)):
-    print(f"Mensaje de whatsapp:{From}: {Body}")
-    registrar_usuario(From)
-    datos = analizar(Body)
+async def webhook(request: Request):
+    data = await request.json()
+    if "message" not in data:
+        return {"ok": True}
+    msg = data["message"]
+    chat_id = msg["chat"]["id"]
+    texto = msg.get("text", "")
+    telefono = str(chat_id)
+    print(f"Mensaje de Telegram {chat_id}: {texto}")
+    registrar_usuario(telefono)
+    datos = analizar(texto)
     print("Analisis:", datos)
 
     if not datos.get("es_financiero"):
-        es_saludo = any(s in Body.lower() for s in [
+        es_saludo = any(s in texto.lower() for s in [
             "hola", "hi", "hey", "buenas", "buen dia", "buenas tardes",
-            "buenas noches", "saludos", "que tal", "como estas", "hello"
+            "buenas noches", "saludos", "que tal", "como estas", "hello", "start"
         ])
         if es_saludo:
-            return xml(
+            await enviar_mensaje(chat_id,
                 "Hola! Soy Aibi, tu asistente financiero personal.\n\n"
                 "Estoy aqui para ayudarte a controlar tu dinero de forma simple.\n\n"
                 "Puedes decirme:\n"
@@ -228,63 +230,50 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
                 "Meta: Viaje a Cusco S/500\n"
                 "Mis metas\n"
                 "Activa reporte diario\n\n"
-                "En que te puedo ayudar hoy?" +
-                tip()
+                "En que te puedo ayudar hoy?" + tip()
             )
-        return xml(
-            "No entendi tu mensaje.\n\n"
-            "Puedes decirme:\n"
-            "Gaste 15 soles en almuerzo\n"
-            "Cuanto tengo?\n"
-            "Mis metas\n\n"
-            "O escribe Hola para ver todas mis funciones." +
-            tip()
-        )
+        else:
+            await enviar_mensaje(chat_id,
+                "No entendi tu mensaje.\n\n"
+                "Puedes decirme:\n"
+                "Gaste 15 soles en almuerzo\n"
+                "Cuanto tengo?\n"
+                "Mis metas\n\n"
+                "O escribe Hola para ver todas mis funciones." + tip()
+            )
+        return {"ok": True}
 
     accion = datos.get("accion")
-
     if accion == "registrar":
-        guardado = guardar(From, datos)
+        guardado = guardar(telefono, datos)
         tipo = datos.get("tipo", "gasto")
         monto = datos.get("monto", 0)
         cat = datos.get("categoria", "Otro")
-        desc = datos.get("descripcion", Body)
+        desc = datos.get("descripcion", texto)
         emoji = "Gasto" if tipo == "gasto" else "Ingreso"
-        msg = f"{emoji} registrado!\n\n{desc}\nS/ {monto}\n{cat}"
+        msg_resp = f"{emoji} registrado!\n\n{desc}\nS/ {monto}\n{cat}"
         if random.random() > 0.6:
-            msg += tip()
-        return xml(msg)
+            msg_resp += tip()
+        await enviar_mensaje(chat_id, msg_resp)
+    elif accion == "consultar":
+        await enviar_mensaje(chat_id, resumen(telefono))
+    elif accion == "editar":
+        await enviar_mensaje(chat_id, editar(telefono, datos.get("descripcion_buscar", ""), datos.get("monto_nuevo", 0)))
+    elif accion == "eliminar":
+        await enviar_mensaje(chat_id, eliminar(telefono, datos.get("descripcion_buscar", "")))
+    elif accion == "consulta_avanzada":
+        await enviar_mensaje(chat_id, consulta_avanzada(telefono, datos.get("filtro", ""), datos.get("categoria")))
+    elif accion == "metas":
+        await enviar_mensaje(chat_id, ver_metas(telefono))
+    elif accion == "crear_meta":
+        await enviar_mensaje(chat_id, crear_meta(telefono, datos.get("nombre", "Meta"), datos.get("monto_objetivo", 0)))
+    elif accion == "configurar_reporte":
+        await enviar_mensaje(chat_id, configurar_reporte(telefono, datos.get("tipo_reporte", ""), datos.get("activar", True)))
+    else:
+        await enviar_mensaje(chat_id, "No entendi. Escribe Hola para ver que puedo hacer." + tip())
 
-    if accion == "consultar":
-        return xml(resumen(From))
-
-    if accion == "editar":
-        return xml(editar(From, datos.get("descripcion_buscar", ""), datos.get("monto_nuevo", 0)))
-
-    if accion == "eliminar":
-        return xml(eliminar(From, datos.get("descripcion_buscar", "")))
-
-    if accion == "consulta_avanzada":
-        return xml(consulta_avanzada(From, datos.get("filtro", ""), datos.get("categoria")))
-
-    if accion == "metas":
-        return xml(ver_metas(From))
-
-    if accion == "crear_meta":
-        return xml(crear_meta(From, datos.get("nombre", "Meta"), datos.get("monto_objetivo", 0)))
-
-    if accion == "configurar_reporte":
-        return xml(configurar_reporte(From, datos.get("tipo_reporte", ""), datos.get("activar", True)))
-
-    return xml(
-        "No entendi tu mensaje.\n\n"
-        "Escribe Hola para ver todo lo que puedo hacer." +
-        tip()
-    )
+    return {"ok": True}
 
 @app.get("/")
 def inicio():
-    return {
-        "aibi": "v2 corriendo",
-        "funciones": ["registrar", "consultar", "editar", "eliminar", "metas", "reportes"]
-    }
+    return {"aibi": "v2 con Telegram"}
