@@ -14,9 +14,9 @@ TIPS = [
     "Ahorrar el 10% de cada ingreso es el primer paso hacia la libertad financiera.",
     "Regla 50/30/20: 50% necesidades, 30% deseos, 20% ahorro.",
     "Un fondo de emergencia de 3 meses de gastos te protege de cualquier imprevisto.",
-    "Los pequenos gastos diarios pueden sumar mas de S/300 al mes sin que te des cuenta.",
+    "Los pequeños gastos diarios pueden sumar más de S/300 al mes sin que te des cuenta.",
     "El mejor momento para ahorrar fue ayer. El segundo mejor momento es hoy.",
-    "Pagar tus deudas primero es la mejor inversion que puedes hacer.",
+    "Pagar tus deudas primero es la mejor inversión que puedes hacer.",
     "Registrar tus gastos diariamente tarda menos de 30 segundos y puede cambiar tu vida.",
 ]
 
@@ -46,21 +46,24 @@ def registrar_usuario(telefono):
 
 def analizar(texto):
     try:
+        hoy = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         r = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": """Analiza el mensaje y responde SOLO JSON sin texto extra ni comillas adicionales.
+                {"role": "system", "content": f"""Eres Aibi, un asesor financiero personal de élite. Hoy es {hoy}. 
+Analiza el mensaje y responde SOLO JSON sin texto extra.
 
 Acciones posibles:
-- Si menciona gasto o ingreso: {"accion":"registrar","tipo":"gasto" o "ingreso","monto":numero,"categoria":"Comida" o "Transporte" o "Salud" o "Entretenimiento" o "Trabajo" o "Ahorro" o "Otro","descripcion":"texto corto","es_financiero":true}
-- Si pregunta saldo, balance, resumen, cuanto tiene: {"accion":"consultar","es_financiero":true}
-- Si quiere editar un gasto: {"accion":"editar","descripcion_buscar":"texto a buscar","monto_nuevo":numero,"es_financiero":true}
-- Si quiere eliminar un gasto: {"accion":"eliminar","descripcion_buscar":"texto a buscar","es_financiero":true}
-- Si pregunta por categoria especifica o mayor gasto: {"accion":"consulta_avanzada","filtro":"categoria o mayor_gasto","categoria":"nombre si aplica","es_financiero":true}
-- Si quiere ver o agregar metas: {"accion":"metas","es_financiero":true}
-- Si quiere crear una meta: {"accion":"crear_meta","nombre":"nombre de la meta","monto_objetivo":numero,"es_financiero":true}
-- Si quiere activar o desactivar reportes: {"accion":"configurar_reporte","tipo_reporte":"diario o semanal o mensual","activar":true o false,"es_financiero":true}
-- Si no es financiero: {"accion":"ninguna","es_financiero":false}"""},
+- Gasto/Ingreso: {{"accion":"registrar","tipo":"gasto" o "ingreso","monto":numero,"categoria":"Comida" o "Transporte" o "Salud" o "Entretenimiento" o "Trabajo" o "Ahorro" o "Otro","descripcion":"texto corto","es_financiero":true}}
+- Saldo/Balance/Resumen: {{"accion":"consultar","es_financiero":true}}
+- Editar gasto: {{"accion":"editar","descripcion_buscar":"texto a buscar","monto_nuevo":numero,"es_financiero":true}}
+- Eliminar gasto: {{"accion":"eliminar","descripcion_buscar":"texto a buscar","es_financiero":true}}
+- Consultas avanzadas: {{"accion":"consulta_avanzada","filtro":"categoria o mayor_gasto","categoria":"nombre si aplica","es_financiero":true}}
+- Ver metas: {{"accion":"metas","es_financiero":true}}
+- CREAR META: Si quiere crear una meta (ej. "viaje a lima en 3 meses por 1500"), calcula el ahorro mensual necesario. Devuelve: {{"accion":"crear_meta","nombre":"nombre de la meta","monto_objetivo":numero,"fecha_limite":"YYYY-MM-DD" o null,"mensaje_asesor":"Redacta como experto financiero: indica cuánto ahorrar por mes o semana, sugiere 2 categorías donde recortar gastos, y pregúntale cuánto quiere destinar hoy para empezar","es_financiero":true}}
+- ABONAR A META: Si dice "aboné 50 a mi viaje", devuelve: {{"accion":"abonar_meta","nombre_buscar":"palabra clave de la meta","monto":numero,"es_financiero":true}}
+- Activar/Desactivar reportes: {{"accion":"configurar_reporte","tipo_reporte":"diario o semanal o mensual","activar":true o false,"es_financiero":true}}
+- No es financiero: {{"accion":"ninguna","es_financiero":false}}"""},
                 {"role": "user", "content": texto}
             ]
         )
@@ -91,10 +94,10 @@ def editar(telefono, descripcion_buscar, monto_nuevo):
     try:
         result = sb.table("transacciones").select("*").eq("telefono", telefono).ilike("descripcion", f"%{descripcion_buscar}%").order("id", desc=True).limit(1).execute()
         if not result.data:
-            return f"No encontre ningun gasto con '{descripcion_buscar}'."
+            return f"No encontré ningún gasto con '{descripcion_buscar}'."
         registro = result.data[0]
         sb.table("transacciones").update({"monto": monto_nuevo}).eq("id", registro["id"]).execute()
-        return f"Listo! Actualice '{registro['descripcion']}' de S/ {registro['monto']} a S/ {monto_nuevo}"
+        return f"¡Listo! Actualicé '{registro['descripcion']}' de S/ {registro['monto']} a S/ {monto_nuevo}"
     except Exception as e:
         return "Error al editar el gasto."
 
@@ -102,10 +105,10 @@ def eliminar(telefono, descripcion_buscar):
     try:
         result = sb.table("transacciones").select("*").eq("telefono", telefono).ilike("descripcion", f"%{descripcion_buscar}%").order("id", desc=True).limit(1).execute()
         if not result.data:
-            return f"No encontre ningun gasto con '{descripcion_buscar}'."
+            return f"No encontré ningún gasto con '{descripcion_buscar}'."
         registro = result.data[0]
         sb.table("transacciones").delete().eq("id", registro["id"]).execute()
-        return f"Elimine '{registro['descripcion']}' de S/ {registro['monto']} en {registro['categoria']}."
+        return f"Eliminé '{registro['descripcion']}' de S/ {registro['monto']} en {registro['categoria']}."
     except Exception as e:
         return "Error al eliminar el gasto."
 
@@ -113,7 +116,7 @@ def resumen(telefono):
     try:
         data = sb.table("transacciones").select("*").eq("telefono", telefono).execute().data
         if not data:
-            return "No tienes registros aun.\n\nEmpieza diciendome:\nGaste 10 soles en menu"
+            return "No tienes registros aún.\n\nEmpieza diciéndome:\nGasté 10 soles en menú"
         ing = sum(r["monto"] for r in data if r["tipo"] == "ingreso")
         gas = sum(r["monto"] for r in data if r["tipo"] == "gasto")
         bal = ing - gas
@@ -127,7 +130,7 @@ def resumen(telefono):
         pct = round((gas / ing) * 100) if ing > 0 else 0
         if pct > 90: consejo = "Alerta: gastas casi todo lo que ganas."
         elif pct > 70: consejo = f"Gastas el {pct}% de tus ingresos. Meta: bajar al 70%."
-        else: consejo = f"Excelente! Solo gastas el {pct}% de tus ingresos."
+        else: consejo = f"¡Excelente! Solo gastas el {pct}% de tus ingresos."
         signo = "+" if bal >= 0 else ""
         return f"""Tu resumen Aibi:
 
@@ -149,7 +152,7 @@ def consulta_avanzada(telefono, filtro, categoria=None):
             query = query.eq("categoria", categoria)
         data = query.execute().data
         if not data:
-            return "No encontre gastos con ese criterio."
+            return "No encontré gastos con ese criterio."
         if filtro == "mayor_gasto":
             mayor = max(data, key=lambda x: x["monto"])
             return f"Tu mayor gasto es:\n\n{mayor['descripcion']}\nS/ {mayor['monto']}\n{mayor['categoria']}"
@@ -165,29 +168,64 @@ def ver_metas(telefono):
     try:
         data = sb.table("metas").select("*").eq("telefono", telefono).eq("completada", False).execute().data
         if not data:
-            return "No tienes metas activas.\n\nCrea una asi:\nMeta: Viaje a Cusco S/500"
-        resp = "Tus metas de ahorro:\n"
+            return "No tienes metas activas.\n\nCrea una así:\nQuiero ahorrar 500 para un viaje en diciembre"
+        resp = "🎯 Tus metas de ahorro:\n"
         for m in data:
             pct = round((m["monto_actual"] / m["monto_objetivo"]) * 100) if m["monto_objetivo"] > 0 else 0
             faltan = m["monto_objetivo"] - m["monto_actual"]
             barra = ("=" * (pct // 10)) + ("-" * (10 - pct // 10))
-            resp += f"\n{m['nombre']}\n[{barra}] {pct}%\nS/ {m['monto_actual']:.0f} de S/ {m['monto_objetivo']:.0f}\nFaltan: S/ {faltan:.0f}\n"
+            fecha_txt = f"\n📅 Límite: {m['fecha_limite']}" if m.get('fecha_limite') else ""
+            resp += f"\n{m['nombre']}{fecha_txt}\n[{barra}] {pct}%\nS/ {m['monto_actual']:.0f} de S/ {m['monto_objetivo']:.0f}\nFaltan: S/ {faltan:.0f}\n"
         return resp + tip()
     except Exception as e:
         return "Error consultando metas."
 
-def crear_meta(telefono, nombre, monto_objetivo):
+def crear_meta(telefono, nombre, monto_objetivo, fecha_limite=None, mensaje_asesor=None):
     try:
         sb.table("metas").insert({
             "telefono": telefono,
             "nombre": nombre,
             "monto_objetivo": monto_objetivo,
             "monto_actual": 0,
-            "completada": False
+            "completada": False,
+            "fecha_limite": fecha_limite
         }).execute()
+        
+        if mensaje_asesor:
+            return f"🎯 ¡Meta Registrada!\n\n{mensaje_asesor}"
+            
         return f"Meta creada!\n\n{nombre}\nObjetivo: S/ {monto_objetivo:.0f}\n\nEscribe 'Mis metas' para ver tu progreso."
     except Exception as e:
-        return "Error creando la meta."
+        print("Error creando meta:", e)
+        return "Error creando la meta en la base de datos."
+
+def abonar_meta(telefono, nombre_buscar, monto):
+    try:
+        # Buscar la meta que coincida (parcialmente) con el nombre
+        result = sb.table("metas").select("*").eq("telefono", telefono).eq("completada", False).ilike("nombre", f"%{nombre_buscar}%").execute()
+        
+        if not result.data:
+            return f"No encontré ninguna meta activa relacionada con '{nombre_buscar}'. Escribe 'Mis metas' para ver tus metas actuales."
+            
+        meta = result.data[0]
+        nuevo_monto = meta["monto_actual"] + monto
+        completada = nuevo_monto >= meta["monto_objetivo"]
+        
+        # Actualizar base de datos
+        sb.table("metas").update({
+            "monto_actual": nuevo_monto,
+            "completada": completada
+        }).eq("id", meta["id"]).execute()
+        
+        if completada:
+            return f"🎉 ¡Felicidades! Has completado tu meta '{meta['nombre']}' (S/ {nuevo_monto}).\n\n¡Eres un maestro de la disciplina financiera! ¿Cuál será tu próximo objetivo?"
+            
+        pct = round((nuevo_monto / meta["monto_objetivo"]) * 100)
+        faltan = meta["monto_objetivo"] - nuevo_monto
+        return f"🔥 ¡Excelente abono!\n\nAgregaste S/ {monto:.0f} a '{meta['nombre']}'.\nProgreso: {pct}% (S/ {nuevo_monto:.0f} de S/ {meta['monto_objetivo']:.0f}).\nSolo faltan S/ {faltan:.0f}. ¡Sigue así!"
+    except Exception as e:
+        print("Error abonando:", e)
+        return "Error al registrar el abono."
 
 def configurar_reporte(telefono, tipo_reporte, activar):
     try:
@@ -196,7 +234,7 @@ def configurar_reporte(telefono, tipo_reporte, activar):
         estado = "activado" if activar else "desactivado"
         return f"Reporte {tipo_reporte} {estado}."
     except Exception as e:
-        return "Error actualizando configuracion."
+        return "Error actualizando configuración."
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -210,7 +248,7 @@ async def webhook(request: Request):
     print(f"Mensaje de Telegram {chat_id}: {texto}")
     registrar_usuario(telefono)
     datos = analizar(texto)
-    print("Analisis:", datos)
+    print("Análisis:", datos)
 
     if not datos.get("es_financiero"):
         es_saludo = any(s in texto.lower() for s in [
@@ -219,25 +257,24 @@ async def webhook(request: Request):
         ])
         if es_saludo:
             await enviar_mensaje(chat_id,
-                "Hola! Soy Aibi, tu asistente financiero personal.\n\n"
-                "Estoy aqui para ayudarte a controlar tu dinero de forma simple.\n\n"
+                "¡Hola! Soy Aibi, tu asesor financiero personal de élite. 🎩\n\n"
+                "Estoy aquí para ayudarte a controlar tu dinero y lograr tus objetivos.\n\n"
                 "Puedes decirme:\n"
-                "Gaste 15 soles en almuerzo\n"
-                "Ingrese 500 de sueldo\n"
-                "Cuanto tengo?\n"
-                "Mi mayor gasto\n"
-                "Cuanto gaste en comida?\n"
-                "Meta: Viaje a Cusco S/500\n"
-                "Mis metas\n"
-                "Activa reporte diario\n\n"
-                "En que te puedo ayudar hoy?" + tip()
+                "📉 *Gasté 15 soles en almuerzo*\n"
+                "📈 *Ingresé 500 de sueldo*\n"
+                "📊 *¿Cuánto tengo?*\n"
+                "🔍 *Mi mayor gasto*\n"
+                "🎯 *Quiero ahorrar 1500 para un viaje en diciembre*\n"
+                "💰 *Aboné 50 a mi viaje*\n"
+                "🏆 *Mis metas*\n\n"
+                "¿En qué te puedo ayudar hoy?" + tip()
             )
         else:
             await enviar_mensaje(chat_id,
-                "No entendi tu mensaje.\n\n"
+                "No entendí tu mensaje.\n\n"
                 "Puedes decirme:\n"
-                "Gaste 15 soles en almuerzo\n"
-                "Cuanto tengo?\n"
+                "Gasté 15 soles en almuerzo\n"
+                "¿Cuánto tengo?\n"
                 "Mis metas\n\n"
                 "O escribe Hola para ver todas mis funciones." + tip()
             )
@@ -250,7 +287,7 @@ async def webhook(request: Request):
         monto = datos.get("monto", 0)
         cat = datos.get("categoria", "Otro")
         desc = datos.get("descripcion", texto)
-        emoji = "Gasto" if tipo == "gasto" else "Ingreso"
+        emoji = "📉 Gasto" if tipo == "gasto" else "📈 Ingreso"
         msg_resp = f"{emoji} registrado!\n\n{desc}\nS/ {monto}\n{cat}"
         if random.random() > 0.6:
             msg_resp += tip()
@@ -266,14 +303,16 @@ async def webhook(request: Request):
     elif accion == "metas":
         await enviar_mensaje(chat_id, ver_metas(telefono))
     elif accion == "crear_meta":
-        await enviar_mensaje(chat_id, crear_meta(telefono, datos.get("nombre", "Meta"), datos.get("monto_objetivo", 0)))
+        await enviar_mensaje(chat_id, crear_meta(telefono, datos.get("nombre", "Meta"), datos.get("monto_objetivo", 0), datos.get("fecha_limite"), datos.get("mensaje_asesor")))
+    elif accion == "abonar_meta":
+        await enviar_mensaje(chat_id, abonar_meta(telefono, datos.get("nombre_buscar", ""), datos.get("monto", 0)))
     elif accion == "configurar_reporte":
         await enviar_mensaje(chat_id, configurar_reporte(telefono, datos.get("tipo_reporte", ""), datos.get("activar", True)))
     else:
-        await enviar_mensaje(chat_id, "No entendi. Escribe Hola para ver que puedo hacer." + tip())
+        await enviar_mensaje(chat_id, "No entendí. Escribe Hola para ver qué puedo hacer." + tip())
 
     return {"ok": True}
 
 @app.get("/")
 def inicio():
-    return {"aibi": "v2 con Telegram"}
+    return {"aibi": "v2 con Metas Inteligentes"}
