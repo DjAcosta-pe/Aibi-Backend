@@ -15,6 +15,8 @@ TIPS = [
     "Un fondo de emergencia de 3 meses de gastos te protege de cualquier imprevisto.",
     "Los pequenos gastos diarios pueden sumar mas de S/300 al mes sin que te des cuenta.",
     "El mejor momento para ahorrar fue ayer. El segundo mejor momento es hoy.",
+    "Pagar tus deudas primero es la mejor inversion que puedes hacer.",
+    "Registrar tus gastos diariamente tarda menos de 30 segundos y puede cambiar tu vida.",
 ]
 
 def xml(msg):
@@ -203,23 +205,39 @@ def configurar_reporte(telefono, tipo_reporte, activar):
 
 @app.post("/webhook")
 async def webhook(Body: str = Form(...), From: str = Form(...)):
-    print(f"Mensaje de {From}: {Body}")
+    print(f"Mensaje de whatsapp:{From}: {Body}")
     registrar_usuario(From)
     datos = analizar(Body)
     print("Analisis:", datos)
 
     if not datos.get("es_financiero"):
+        es_saludo = any(s in Body.lower() for s in [
+            "hola", "hi", "hey", "buenas", "buen dia", "buenas tardes",
+            "buenas noches", "saludos", "que tal", "como estas", "hello"
+        ])
+        if es_saludo:
+            return xml(
+                "Hola! Soy Aibi, tu asistente financiero personal.\n\n"
+                "Estoy aqui para ayudarte a controlar tu dinero de forma simple.\n\n"
+                "Puedes decirme:\n"
+                "Gaste 15 soles en almuerzo\n"
+                "Ingrese 500 de sueldo\n"
+                "Cuanto tengo?\n"
+                "Mi mayor gasto\n"
+                "Cuanto gaste en comida?\n"
+                "Meta: Viaje a Cusco S/500\n"
+                "Mis metas\n"
+                "Activa reporte diario\n\n"
+                "En que te puedo ayudar hoy?" +
+                tip()
+            )
         return xml(
-            "Hola! Soy Aibi, tu asistente financiero.\n\n"
-            "Puedo ayudarte con:\n"
-            "Gaste 10 soles en menu\n"
-            "Ingrese 500 de sueldo\n"
+            "No entendi tu mensaje.\n\n"
+            "Puedes decirme:\n"
+            "Gaste 15 soles en almuerzo\n"
             "Cuanto tengo?\n"
-            "Mi mayor gasto\n"
-            "Cuanto gaste en comida?\n"
-            "Meta: Viaje S/500\n"
-            "Mis metas\n"
-            "Activa reporte diario\n" +
+            "Mis metas\n\n"
+            "O escribe Hola para ver todas mis funciones." +
             tip()
         )
 
@@ -258,8 +276,15 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
     if accion == "configurar_reporte":
         return xml(configurar_reporte(From, datos.get("tipo_reporte", ""), datos.get("activar", True)))
 
-    return xml("No entendi tu mensaje. Escribe 'ayuda' para ver que puedo hacer." + tip())
+    return xml(
+        "No entendi tu mensaje.\n\n"
+        "Escribe Hola para ver todo lo que puedo hacer." +
+        tip()
+    )
 
 @app.get("/")
 def inicio():
-    return {"aibi": "v2 corriendo", "funciones": ["registrar", "consultar", "editar", "eliminar", "metas", "reportes"]}
+    return {
+        "aibi": "v2 corriendo",
+        "funciones": ["registrar", "consultar", "editar", "eliminar", "metas", "reportes"]
+    }
